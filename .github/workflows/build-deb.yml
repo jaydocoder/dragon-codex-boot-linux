@@ -107,6 +107,11 @@ jobs:
           echo "== 控制信息 =="
           dpkg-deb -I "$DEB"
 
+          # 清单先落到变量里再匹配：把 dpkg-deb 直接接管道给 grep -q 时，
+          # grep -q 命中即退出会触发 SIGPIPE，在 pipefail 下让整条管道失败，
+          # 报「包内缺少」但其实包没问题。
+          listing="$(dpkg-deb -c "$DEB")"
+
           # copyright 必须存在：Debian 政策要求，也是上游 MIT 署名的落点。
           for f in \
             ./usr/bin/dragon-codex-boot \
@@ -117,7 +122,7 @@ jobs:
             ./usr/share/doc/dragon-codex-boot/copyright \
             ./usr/share/doc/dragon-codex-boot/NOTICE.md
           do
-            dpkg-deb -c "$DEB" | grep -q " $f$" \
+            grep -q " $f$" <<<"$listing" \
               || { echo "::error::包内缺少 $f"; exit 1; }
           done
 
