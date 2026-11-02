@@ -1,11 +1,13 @@
 MIT License
 
 Copyright (c) 2026 Dragon Codex Boot contributors
-  Upstream project: https://github.com/yushua0808-cpu/dragon-codex-boot
-  Author: yushua0808-cpu (Dragon Codex Boot maintainers)
 
-  Linux port: https://github.com/jaydocoder/dragon-codex-boot-linux
-  Linux port: https://github.com/jaydocoder/dragon-codex-boot
+Upstream project: Dragon Codex Boot
+Upstream author: yushua0808-cpu (Dragon Codex Boot maintainers)
+Upstream URL: https://github.com/yushua0808-cpu/dragon-codex-boot
+
+Copyright (c) 2026 Dragon Codex Boot for Linux contributors
+Linux port URL: https://github.com/jaydocoder/dragon-codex-boot-linux
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
