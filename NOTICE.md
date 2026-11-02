@@ -55,6 +55,24 @@ Linux 桌面环境的重新实现。
 `5ba5da46cb13f1342e3c0d062efc8df0`），原样保留其 `media/MEDIA_NOTICE.md`，
 媒体许可边界见该文件。
 
+## 版权声明全文
+
+`LICENSE` 采用标准 MIT 模板，版权行沿用上游原文：
+
+```
+Copyright (c) 2026 Dragon Codex Boot contributors
+```
+
+该行涵盖上游与本移植版两方贡献者。为求明确，此处分别列出：
+
+- **上游原创设计与素材**：Copyright (c) 2026 Dragon Codex Boot contributors
+  （Dragon Codex Boot maintainers，https://github.com/yushua0808-cpu/dragon-codex-boot）
+- **Linux 移植版新增代码与文档**：Copyright (c) 2026 Dragon Codex Boot for Linux
+  contributors（https://github.com/jaydocoder/dragon-codex-boot-linux）
+
+两方均以 MIT License 授权，条款完全相同。`LICENSE` 未做任何删改，以同时满足
+上游 MIT 许可证"保留原版权声明"的要求。
+
 ## 商标声明
 
 OpenAI、Codex、ChatGPT 等名称仅用于说明本项目所支持的客户端。
