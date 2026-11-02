@@ -8,7 +8,7 @@
 
 ```bash
 # 软件中心双击安装，或命令行：
-sudo apt-get install -y ./dragon-codex-boot_0.1.0_all.deb
+sudo apt-get install -y ./dragon-codex-boot_0.2.0_all.deb
 ```
 
 装完应用菜单里出现 **ChatGPT（启动动画）**，双击即用。依赖由 apt 自动安装，

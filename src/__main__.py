@@ -39,7 +39,7 @@ EXIT_ENV_ERROR = 2
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dragon-codex-boot",
-        description="Codex 启动动画启动器（Ubuntu / X11 版）",
+        description="Codex 启动动画启动器（Ubuntu 版，支持 X11 与 Wayland）",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")

@@ -26,13 +26,54 @@ PyQt6 + XComposite + libmpv 重新实现同一套交互，**不复制上游代�
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
-| Ubuntu | 24.04 及以上 | 需要 X11（GNOME 默认会话即可） |
+| Ubuntu | 24.04 及以上 | X11 或 Wayland 会话均可，见下方「会话类型支持」 |
 | Python | 3.10+ | 使用项目内 `.venv` |
 | PyQt6 | 6.12.0 | 走 pip 安装 |
 | libmpv | 0.37+ | 系统包 `libmpv2` |
 | 合成器 | mutter | 需要 `_NET_WM_CM_S0` selection owner |
 
-> **仅支持 X11**。Wayland 会话下 X11 拦截窗口几何的能力受限，请切换到 Xorg 会话。
+### 会话类型支持
+
+程序按会话类型自动选择嵌入档位，**X11 与 Wayland 都能用**，区别只在过渡阶段的画面效果：
+
+| 会话 | 动画播放 | 窗口对齐与交接 | 过渡嵌入档 |
+| --- | --- | --- | --- |
+| X11 (Xorg) | ✅ | ✅ | `composite`（实时合成，最接近上游 DWM 缩略图效果） |
+| Wayland + XWayland | ✅ | ✅ | `shm`（真实窗口留在屏幕上做透明度渐变） |
+| Wayland 无 XWayland | ✅ | ⚠️ 受限 | `fade`（仅整体渐隐） |
+
+启动日志会明确写出判定结果与选择理由，例如：
+
+```
+session:kind wayland (Wayland（经 XWayland）) display=:0 xwayland=True
+session:embed-mode requested=auto chosen=shm reason=Wayland 会话：合成器已接管顶层窗口重定向...
+```
+
+**为什么 Wayland 下不能用 `composite`**：Wayland 的安全模型不允许第三方抢占窗口重定向。
+GNOME 合成器已对每个顶层窗口做了 `RedirectAutomatic`，第二个客户端再请求
+`RedirectManual` 会拿到 `BadAccess`。这不是程序缺陷，而是协议层面的设计限制。
+
+#### 视频输出驱动的自适应
+
+除嵌入档位外，mpv 的 `vo` 也会按会话切换：
+
+| 会话 | `vo` | 说明 |
+| --- | --- | --- |
+| X11 (Xorg) | `gpu` | OpenGL 渲染，画质与性能最佳（原有行为） |
+| Wayland（经 XWayland） | `xv` | 见下方实测结论 |
+
+**为什么 Wayland 下要换 `vo`**：`vo=gpu` 在 XWayland 窗口里实测会**静默失效**——
+mpv 的 `time-pos` 正常推进、`vo-configured` 为 True、`current-vo` 也报 `gpu`，
+且不打印任何错误，但窗口里一帧都没有（截屏为 100% 纯色底）。同一窗口换用
+`vo=xv` 后立刻出画（截屏可得 7 万余种颜色）。这是实测结论，不是猜测；
+改动前请先复现该现象再决定。
+
+**关键前提**：本项目默认目标 `/usr/bin/chatgpt` 是 Electron 应用，在 Wayland 会话下
+仍通过 XWayland 运行（进程带 `--ozone-platform=x`），因此原有的窗口查找、几何对齐、
+焦点交接三步完全有效——受限的只有画面合成这一档。
+
+如果目标应用改为**原生 Wayland 应用**，窗口几何对第三方不可见，`shm`/`fade` 也会失效，
+届时需要应用侧配合（如 `xdg-desktop-portal` 的窗口 API）。
 
 ## 安装
 
@@ -41,7 +82,7 @@ PyQt6 + XComposite + libmpv 重新实现同一套交互，**不复制上游代�
 从 [Releases](https://github.com/jaydocoder/dragon-codex-boot-linux/releases) 下载 `.deb`，双击用软件中心安装，或：
 
 ```bash
-sudo apt-get install -y ./dragon-codex-boot_0.1.0_all.deb
+sudo apt-get install -y ./dragon-codex-boot_0.2.0_all.deb
 ```
 
 每次发布都附带 `SHA256SUMS`，下载后可核对：
@@ -205,9 +246,9 @@ cd dragon-codex-boot-linux
 
 ```bash
 # 同步 VERSION 与 tag，避免 tag 与包内版本不一致
-echo "0.2.0-linux" > VERSION
-git commit -am "release: 0.2.0"
-git tag v0.2.0
+echo "<版本>-linux" > VERSION
+git commit -am "release: <版本>"
+git tag v<版本>
 git push origin main --tags
 ```
 
