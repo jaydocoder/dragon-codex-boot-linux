@@ -16,3 +16,7 @@ launcher.json
 
 # 桌面入口接管的备份文件（属于用户机器状态，不应入库）
 *.dcb-linux.bak
+
+# 构建产物
+dist/
+packaging/build/

@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=ChatGPT（启动动画）
+Name[en]=ChatGPT (Boot Animation)
+GenericName=ChatGPT 启动动画启动器
+Comment=播放龙娘启动动画后拉起 ChatGPT 桌面客户端
+Comment[en]=Play the dragon boot animation, then hand off to the ChatGPT desktop client
+Exec=/usr/bin/dragon-codex-boot run
+Icon=chatgpt
+Terminal=false
+StartupNotify=true
+StartupWMClass=Chatgpt
+Categories=Utility;
+Keywords=chatgpt;codex;startup;animation;boot;

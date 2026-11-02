@@ -1,0 +1,45 @@
+#!/bin/bash
+# prerm —— 卸载前清理。
+#
+# 卸载前把被接管的桌面入口还原，否则会留下一堆指向
+# /usr/bin/dragon-codex-boot 的死链，用户点击图标后什么都不会发生。
+#
+# 卸载流程以 root 运行，而每个用户的入口都在自己的家目录里，
+# 因此按 /home 与 /root 枚举真实用户分别还原。
+
+set -e
+
+restore_for_user() {
+    local user="$1"
+    local home="$2"
+    local uid
+
+    [ -d "$home" ] || return 0
+    uid="$(id -u "$user" 2>/dev/null)" || return 0
+
+    # 以目标用户身份运行，避免在用户家目录里留下 root 拥有的文件。
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$user" -- env HOME="$home" XDG_RUNTIME_DIR="/run/user/$uid" \
+            /usr/bin/dragon-codex-boot entries --restore >/dev/null 2>&1 || true
+    else
+        su -s /bin/sh "$user" -c \
+            "/usr/bin/dragon-codex-boot entries --restore" >/dev/null 2>&1 || true
+    fi
+}
+
+case "$1" in
+    remove|deconfigure)
+        # 只在真正卸载时还原；升级时保持接管状态，避免用户双击图标时
+        # 中间出现一次"没有动画"的窗口。
+        if [ "$1" = "remove" ] && [ -x /usr/bin/dragon-codex-boot ]; then
+            for home in /home/* /root; do
+                [ -d "$home" ] || continue
+                user="$(stat -c '%U' "$home" 2>/dev/null)" || continue
+                [ -n "$user" ] || continue
+                restore_for_user "$user" "$home"
+            done
+        fi
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,51 @@
+#!/bin/bash
+# postinst —— 安装后配置。
+#
+# 只做两件事：
+#   1. 刷新桌面与图标缓存，让新图标立刻出现在应用菜单里；
+#   2. 给出可选接管官方图标的提示（不擅自修改用户的桌面入口）。
+#
+# 刻意不在安装阶段自动接管 chatgpt.desktop：
+#   - 它属于 chatgpt deb 包，官方包升级会覆盖，属用户可见的意外变更；
+#   - 机器上可能已有其它启动器包装（如 chatgpt-codexhost-launcher），
+#     自动改写会造成链路冲突。
+# 需要时由用户显式执行 dragon-codex-boot entries --adopt。
+
+set -e
+
+# 刷新 desktop 数据库；缺工具时静默跳过，不能让安装因此失败。
+refresh_caches() {
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+    fi
+}
+
+case "$1" in
+    configure)
+        refresh_caches
+        cat <<'EOF'
+
+Dragon Codex Boot Linux 已安装。
+
+  · 应用菜单里会出现「ChatGPT（启动动画）」，双击即可播放动画并拉起 ChatGPT。
+  · 命令行用法：dragon-codex-boot run
+
+如需让官方「ChatGPT」图标也走启动动画（会改写
+~/.local/share/applications/chatgpt.desktop 的 Exec 行，可随时还原）：
+
+  dragon-codex-boot entries --plan      # 先预览会改哪些文件
+  dragon-codex-boot entries --adopt     # 确认后接管
+  dragon-codex-boot entries --restore   # 一键还原
+
+注意：仅支持 X11 会话（Wayland 下窗口嵌入不可用）。
+EOF
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        refresh_caches
+        ;;
+esac
+
+exit 0

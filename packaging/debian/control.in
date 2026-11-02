@@ -1,0 +1,25 @@
+Package: dragon-codex-boot
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Depends: python3 (>= 3.10), python3-pyqt6, python3-xlib, python3-mpv, libmpv2, x11-utils
+Recommends: libgl1-mesa-dri
+Installed-Size: @INSTALLED_SIZE@
+Maintainer: jaydocoder <jaydocoder@proton.me>
+Homepage: https://github.com/jaydocoder/dragon-codex-boot-linux
+Description: ChatGPT 启动动画启动器（Dragon Codex Boot Linux 移植版）
+ 为 ChatGPT 桌面客户端播放一段全屏启动动画，并在动画结尾把真实窗口
+ 对齐到动画里的屏幕区域，动画结束时把焦点交给客户端，观感上就像
+ "动画里的窗口直接变成了真应用"。
+ .
+ 移植自上游 Dragon Codex Boot（Windows WPF / macOS Swift）：
+ https://github.com/yushua0808-cpu/dragon-codex-boot
+ .
+ 特性：
+  * 三档嵌入降级（composite / shm / fade），运行期自动选档
+  * 按 ScreenFrames 关键帧精确对齐真实客户区
+  * 可选接管桌面入口，只改 Exec= 一行，可一键还原
+  * 不读取窗口标题、不截图落盘
+ .
+ 注意：仅支持 X11 会话。Wayland 下窗口嵌入能力不可用。

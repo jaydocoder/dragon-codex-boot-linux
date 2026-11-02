@@ -36,6 +36,42 @@ PyQt6 + XComposite + libmpv 重新实现同一套交互，**不复制上游代�
 
 ## 安装
 
+### 方式一：deb 包（推荐）
+
+从 [Releases](https://github.com/jaydocoder/dragon-codex-boot-linux/releases) 下载 `.deb`，双击用软件中心安装，或：
+
+```bash
+sudo apt-get install -y ./dragon-codex-boot_0.1.0_all.deb
+```
+
+装完后**应用菜单里直接出现「ChatGPT（启动动画）」，双击即可**播放动画并拉起 ChatGPT。
+
+依赖由 apt 自动解决（`python3-pyqt6`、`python3-xlib`、`python3-mpv`、`libmpv2`、`x11-utils`），
+不自带 Python 运行时，也不再往家目录装 `.venv`。
+
+首次运行时会在 `~/.config/dragon-codex-boot/launcher.json` 生成配置，
+日志写到 `~/.local/state/dragon-codex-boot/logs/`，动画素材在 `/usr/share/dragon-codex-boot/media/`。
+
+想让**官方「ChatGPT」图标**也走启动动画（而不是新增的那个图标）：
+
+```bash
+dragon-codex-boot entries --plan      # 先预览会改哪些文件
+dragon-codex-boot entries --adopt     # 确认后接管（只改 Exec= 一行）
+dragon-codex-boot entries --restore   # 一键还原
+```
+
+> 安装脚本**不会**自动接管官方图标：`chatgpt.desktop` 属于 `chatgpt` deb 包，
+> 官方升级会覆盖；机器上也可能已有别的启动器包装。是否接管交给你决定。
+> 卸载本包时会自动 `entries --restore`，不留死链。
+
+卸载：
+
+```bash
+sudo apt-get remove dragon-codex-boot
+```
+
+### 方式二：源码运行
+
 ```bash
 git clone https://github.com/jaydocoder/dragon-codex-boot-linux.git
 cd dragon-codex-boot-linux
@@ -53,6 +89,8 @@ cd dragon-codex-boot-linux
 2. 创建（或复用）`.venv` 并安装 `requirements.txt`
 3. 若 `launcher.json` 不存在，从 `config/launcher.linux.example.json` 生成一份
 4. 做一次模块导入自检
+
+源码方式下用 `./run.sh` 调用；deb 方式下命令是 `dragon-codex-boot`。
 
 ## 使用
 

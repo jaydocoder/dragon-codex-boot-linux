@@ -1,0 +1,29 @@
+#!/bin/bash
+# postrm —— 卸载后清理与提示。
+#
+# 只刷新桌面缓存。用户自己的配置（~/.config/dragon-codex-boot）与
+# 日志（~/.local/state/dragon-codex-boot）刻意保留：这是用户数据，
+# 按 Debian 惯例应在 purge 时才处理，且这里也没有写入系统级配置需要删。
+
+set -e
+
+case "$1" in
+    remove|purge)
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications || true
+        fi
+        if [ "$1" = "purge" ]; then
+            # 清除包自建的缓存，不动用户配置。
+            rm -rf /usr/lib/dragon-codex-boot/__pycache__ 2>/dev/null || true
+            cat <<'EOF'
+
+用户配置与日志仍保留在：
+  ~/.config/dragon-codex-boot/
+  ~/.local/state/dragon-codex-boot/
+如需彻底清除，请手动删除以上两个目录。
+EOF
+        fi
+        ;;
+esac
+
+exit 0

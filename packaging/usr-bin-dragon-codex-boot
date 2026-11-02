@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Dragon Codex Boot Linux —— 系统安装版启动入口。
+
+deb 包把本文件安装到 ``/usr/bin/dragon-codex-boot``。它等价于源码仓库里的
+``run.sh``，区别在于代码位置固定为 ``/usr/lib/dragon-codex-boot``，
+并使用系统 Python 与 apt 提供的 PyQt6 / python-xlib / python-mpv。
+
+用法与源码版一致::
+
+    dragon-codex-boot run
+    dragon-codex-boot run --launch-command "/usr/lib/chatgpt/ChatGPT %U"
+    dragon-codex-boot entries --plan|--adopt|--restore|--verify
+    dragon-codex-boot calibrate --seed-from ...
+"""
+
+import os
+import sys
+
+# 代码根目录：deb 固定安装到 /usr/lib/dragon-codex-boot。
+CODE_ROOT = os.environ.get("DCB_LINUX_CODE_ROOT", "/usr/lib/dragon-codex-boot")
+
+
+def main() -> int:
+    if not os.path.isdir(os.path.join(CODE_ROOT, "src")):
+        sys.stderr.write(
+            "找不到程序代码目录：%s\n"
+            "deb 包可能未正确安装，请重新安装 dragon-codex-boot。\n" % CODE_ROOT
+        )
+        return 2
+
+    # 用 libmpv 时数值区域必须是 C：某些 locale 的小数逗号会让 mpv 解析失败。
+    os.environ["LC_NUMERIC"] = "C"
+
+    # 本程序依赖 X11 的窗口嵌入能力，禁止退化到 Wayland 平台插件。
+    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+    # 强制 1:1 设备像素比。
+    # Xft.dpi 被桌面调成 115 之类的值时，Qt6 会把 devicePixelRatio 抬到 1.2，
+    # 逻辑分辨率随之改变，而 screenFrames 是按视频原始 1920×1080 标定的，
+    # 一旦缩放整条几何链路全部错位。这里钉死缩放。
+    os.environ["QT_SCALE_FACTOR"] = "1"
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+
+    sys.path.insert(0, CODE_ROOT)
+
+    from src.__main__ import main as cli_main
+
+    return cli_main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())
