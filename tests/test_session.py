@@ -15,6 +15,7 @@ from src.embedder import EmbedMode
 from src.geometry import Rect
 from src.launcher import Launcher, Phase
 from src.session import BootSession, SessionResult, STATUS_TEXTS
+from src.sessionkind import SessionInfo, SessionKind
 from src.watcher import ProbeResult
 
 
@@ -131,10 +132,13 @@ class FakePlayer:
     next_position = 0.0
     next_ended = False
 
-    def __init__(self, window_id: int, path, volume: float = 1.0) -> None:
+    def __init__(self, window_id: int, path, volume: float = 1.0, **kwargs) -> None:
         self.window_id = window_id
         self.path = path
         self.volume = volume
+        # 会话层会按会话类型透传 vo；这里记下来供断言，其余参数忽略。
+        self.vo = kwargs.get("vo")
+        self.extra_kwargs = kwargs
         self.seeked: list[float] = []
         self.paused = False
         self.resumed = False
@@ -285,11 +289,57 @@ def make_config(**overrides) -> Config:
     return config
 
 
+def default_session_factory() -> SessionInfo:
+    """测试默认固定成 X11 会话。
+
+    既有用例都按「X11 + auto」的语义写的（auto 保持 auto，交给能力探测），
+    这里显式固定，避免跑测试的机器是 Wayland 时行为漂移。
+    """
+
+    return SessionInfo(
+        kind=SessionKind.X11,
+        raw_type="x11",
+        display=":0",
+        wayland_display=None,
+        xwayland=False,
+    )
+
+
+def wayland_session_factory() -> SessionInfo:
+    """Wayland + XWayland 会话。"""
+
+    return SessionInfo(
+        kind=SessionKind.WAYLAND,
+        raw_type="wayland",
+        display=":0",
+        wayland_display="wayland-0",
+        xwayland=True,
+    )
+
+
+def wayland_no_xwayland_session_factory() -> SessionInfo:
+    """Wayland 且无 XWayland。"""
+
+    return SessionInfo(
+        kind=SessionKind.WAYLAND,
+        raw_type="wayland",
+        display=None,
+        wayland_display="wayland-0",
+        xwayland=False,
+    )
+
+
 class SessionTestBase(unittest.TestCase):
     """提供统一的假依赖装配。"""
 
     def make_session(
-        self, *, embed_mode=EmbedMode.SHM, config=None, embedder=None, finished=None
+        self,
+        *,
+        embed_mode=EmbedMode.SHM,
+        config=None,
+        embedder=None,
+        finished=None,
+        session_factory=None,
     ):
         self.clock = [1000.0]
         self.x11 = FakeX11()
@@ -316,6 +366,7 @@ class SessionTestBase(unittest.TestCase):
             timer_factory=make_timer,
             spawn=spawn,
             finished=finished,
+            session_factory=session_factory or default_session_factory,
         )
         self.finished_calls = []
         return session
@@ -814,3 +865,157 @@ class TestSessionResult(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ----------------------------------------------------------------------
+# 会话类型探测接入
+# ----------------------------------------------------------------------
+class TestSessionKindIntegration(SessionTestBase):
+    """验证会话类型如何影响嵌入档位的选择。"""
+
+    def test_default_x11_keeps_requested_auto(self):
+        """X11 下 auto 不被改写，仍交给能力探测。"""
+
+        session = self.make_session(config=make_config(embed_mode="auto"))
+        session.start()
+
+        self.assertEqual(session._session.kind, SessionKind.X11)
+        self.assertEqual(session._embed_mode, "auto")
+        # 首次选档用的是原始 auto。
+        self.assertEqual(self.embedder.selected[0][0], "auto")
+
+    def test_wayland_with_xwayland_downgrades_auto_to_shm(self):
+        """Wayland + XWayland：auto 提前降为 shm，避免无谓的重定向尝试。"""
+
+        session = self.make_session(
+            config=make_config(embed_mode="auto"),
+            session_factory=wayland_session_factory,
+        )
+        session.start()
+
+        self.assertEqual(session._session.kind, SessionKind.WAYLAND)
+        self.assertTrue(session._session.xwayland)
+        self.assertEqual(session._embed_mode, "shm")
+        self.assertEqual(self.embedder.selected[0][0], "shm")
+
+    def test_wayland_without_xwayland_downgrades_auto_to_fade(self):
+        session = self.make_session(
+            config=make_config(embed_mode="auto"),
+            session_factory=wayland_no_xwayland_session_factory,
+        )
+        session.start()
+
+        self.assertEqual(session._embed_mode, "fade")
+        self.assertEqual(self.embedder.selected[0][0], "fade")
+
+    def test_explicit_mode_survives_on_wayland(self):
+        """用户显式指定的档位不被会话类型改写。"""
+
+        session = self.make_session(
+            config=make_config(embed_mode="composite"),
+            session_factory=wayland_session_factory,
+        )
+        session.start()
+
+        self.assertEqual(session._embed_mode, "composite")
+        self.assertEqual(self.embedder.selected[0][0], "composite")
+
+    def test_second_select_uses_same_session_derived_mode(self):
+        """找到真实窗口后的复选也应沿用会话推导出的档位。"""
+
+        session = self.make_session(
+            config=make_config(embed_mode="auto"),
+            session_factory=wayland_session_factory,
+        )
+        session.start()
+        session._on_tick()
+
+        self.assertEqual(len(self.embedder.selected), 2)
+        self.assertEqual(self.embedder.selected[1][0], "shm")
+        self.assertEqual(self.embedder.selected[1][1], 0xAA00004)
+
+    def test_session_probe_failure_does_not_block_start(self):
+        """探测函数抛异常时，启动仍应成功。
+
+        会话探测只产出诊断信息与档位建议，绝不该有能力阻止动画播放。
+        失败时回退到用户原始配置，等价于「没有这套探测」。
+        """
+
+        def broken():
+            raise RuntimeError("探测炸了")
+
+        session = self.make_session(config=make_config(embed_mode="auto"))
+        session._session_factory = broken
+
+        result = session.start()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(session._embed_mode, "auto")
+        self.assertEqual(self.embedder.selected[0][0], "auto")
+        # 播放窗口照常搭建。
+        self.assertTrue(session._window.shown)
+
+    def test_session_probe_failure_keeps_explicit_mode(self):
+        """探测失败时不能把用户显式指定的档位弄丢。"""
+
+        def broken():
+            raise ValueError("坏了")
+
+        session = self.make_session(config=make_config(embed_mode="fade"))
+        session._session_factory = broken
+
+        result = session.start()
+
+        self.assertTrue(result.ok)
+        self.assertEqual(session._embed_mode, "fade")
+        self.assertEqual(self.embedder.selected[0][0], "fade")
+
+
+# ----------------------------------------------------------------------
+# mpv vo 驱动按会话类型选择
+# ----------------------------------------------------------------------
+class TestVoSelection(SessionTestBase):
+    """Wayland 下 vo=gpu 会静默不出画，必须换成 xv。
+
+    这组用例是回归保护：如果有人把 vo 逻辑改回「一律 gpu」，
+    这里会立刻失败。
+    """
+
+    def test_x11_uses_gpu(self):
+        session = self.make_session(config=make_config(embed_mode="auto"))
+        session.start()
+
+        self.assertEqual(session._vo, "gpu")
+        self.assertEqual(FakePlayer.instances[0].vo, "gpu")
+
+    def test_wayland_uses_xv(self):
+        session = self.make_session(
+            config=make_config(embed_mode="auto"),
+            session_factory=wayland_session_factory,
+        )
+        session.start()
+
+        self.assertEqual(session._vo, "xv")
+        self.assertEqual(FakePlayer.instances[0].vo, "xv")
+
+    def test_wayland_without_xwayland_also_uses_xv(self):
+        session = self.make_session(
+            config=make_config(embed_mode="auto"),
+            session_factory=wayland_no_xwayland_session_factory,
+        )
+        session.start()
+
+        self.assertEqual(FakePlayer.instances[0].vo, "xv")
+
+    def test_probe_failure_leaves_vo_unset(self):
+        """探测失败时不传 vo，交给播放器自己的默认值，行为等价于改动前。"""
+
+        def broken():
+            raise RuntimeError("探测失败")
+
+        session = self.make_session(config=make_config(embed_mode="auto"))
+        session._session_factory = broken
+        session.start()
+
+        self.assertEqual(session._vo, "")
+        self.assertIsNone(FakePlayer.instances[0].vo)

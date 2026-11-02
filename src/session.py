@@ -26,6 +26,13 @@ from .geometry import Rect
 from .launcher import Launcher, Phase, TERMINAL_PHASES, TickResult
 from .log import log
 from .player import PlayerWindow, TEXT_APP_FAILED, TEXT_VIDEO_FAILED, TEXT_WAITING
+from .sessionkind import (
+    detect_session,
+    embed_mode_reason,
+    recommended_embed_mode,
+    recommended_vo,
+    vo_reason,
+)
 from .video import VideoError, VideoPlayer
 from .watcher import WindowWatcher
 from .x11 import X11Error, X11WindowManager
@@ -70,6 +77,7 @@ class BootSession:
         timer_factory=QTimer,
         spawn=subprocess.Popen,
         finished=None,
+        session_factory=detect_session,
     ) -> None:
         """构造会话。
 
@@ -85,6 +93,8 @@ class BootSession:
         self._watcher_factory = watcher_factory
         self._timer_factory = timer_factory
         self._spawn = spawn
+        # 会话类型探测也走注入：测试里可以固定成 wayland/x11，避免依赖真实环境。
+        self._session_factory = session_factory
         # 进入终止阶段后的回调。Qt 事件循环只会在最后一个窗口关闭时自动退出，
         # 而这里还留着非窗口的 QObject（定时器、信号连接），实测事件循环会一直
         # 空转，进程永不结束。入口必须靠这个回调显式 quit()。
@@ -98,6 +108,12 @@ class BootSession:
         self._launcher: Optional[Launcher] = None
         self._result = SessionResult(ok=False)
         self._premeasured_window = window_id
+        # 会话类型一次性探测：登录后不会变，且探测有 /proc 扫描开销。
+        # 结果同时用于「推荐嵌入模式」和诊断输出。
+        self._session = None
+        self._embed_mode = (config.embed_mode or "auto")
+        # mpv 视频输出驱动：按会话类型决定，见 sessionkind.recommended_vo。
+        self._vo = ""
         self._transition_started = False
         self._saw_video_end = False
         # 终止清理只做一次：``_on_terminal`` 内部会把 ``_player``/``_x11``
@@ -109,6 +125,30 @@ class BootSession:
     # ------------------------------------------------------------------
     def start(self) -> SessionResult:
         """搭建窗口与子系统并开始推进。返回 ``ok=False`` 时说明已当场失败。"""
+
+        # 先探测会话类型。它只影响「嵌入档位的推荐」，属于诊断信息，
+        # 因此探测本身出任何问题都必须吞掉：绝不能因为诊断代码而让动画起不来。
+        try:
+            self._session = self._session_factory()
+            self._embed_mode = recommended_embed_mode(
+                self._session, self.config.embed_mode
+            )
+            log(
+                f"session:kind {self._session.kind.value} "
+                f"({self._session.label}) display={self._session.display or '-'} "
+                f"xwayland={self._session.xwayland}"
+            )
+            log(
+                f"session:embed-mode requested={self.config.embed_mode or 'auto'} "
+                f"chosen={self._embed_mode} "
+                f"reason={embed_mode_reason(self._session, self.config.embed_mode)}"
+            )
+            self._vo = recommended_vo(self._session)
+            log(f"session:vo chosen={self._vo} reason={vo_reason(self._session)}")
+        except Exception as exc:  # noqa: BLE001 - 诊断失败绝不影响主流程
+            log(f"session:detect-failed err={exc}")
+            # 回退到用户原始配置，等价于「没装这套探测」时的行为。
+            self._embed_mode = self.config.embed_mode or "auto"
 
         try:
             self._x11 = self._x11_factory()
@@ -140,7 +180,7 @@ class BootSession:
         if self._embedder is not None:
             # 先按静态能力选一次档；找到目标窗口后会带上窗口号复选一次，
             # 因为「合成器已在接管该窗口」只有真实窗口才能探测出来。
-            self._embedder.select(self.config.embed_mode)
+            self._embedder.select(self._embed_mode)
 
         self._launcher = self._launcher_factory(self.config)
         self._launcher.prepare(rect)
@@ -176,7 +216,12 @@ class BootSession:
         # deb 安装形态下视频在 /usr/share，而配置在 ~/.config。
         path = self.config.resolve_video()
         try:
-            self._player = self._player_factory(window_id, path, volume=self.config.volume)
+            # vo 按会话类型选择：Wayland 下 vo=gpu 会静默不出画（见 sessionkind）。
+            # 探测失败时 _vo 为空串，交给播放器用它自己的默认值。
+            extra = {"vo": self._vo} if self._vo else {}
+            self._player = self._player_factory(
+                window_id, path, volume=self.config.volume, **extra
+            )
             self._player.open()
             return True
         except VideoError as exc:
@@ -258,7 +303,7 @@ class BootSession:
             if self._embedder is not None and not self._embedder._state.window_id:
                 # 用真实窗口号复选一次档位：XComposite 的 RedirectManual 是否
                 # 被合成器拒绝，只有在该窗口上实测才能知道。
-                self._embedder.select(self.config.embed_mode, probe.candidate)
+                self._embedder.select(self._embed_mode, probe.candidate)
                 self._embedder.attach(probe.candidate)
 
     def _apply_tick(self, result: TickResult) -> None:
