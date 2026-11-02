@@ -245,7 +245,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         )
         return EXIT_ENV_ERROR
 
-    video = args.video or (config.base_dir / config.video)
+    video = args.video or config.resolve_video()
     times = [frame.time for frame in seeds]
     try:
         samples = sample_frames(
@@ -273,13 +273,18 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 # 入口
 # ----------------------------------------------------------------------
 def _setup_logging(config) -> None:
-    """把日志接到配置所在目录的 ``logs/launcher.log``。
+    """把日志接到 ``logs/launcher.log``。
+
+    日志根目录按运行形态选择：源码形态为项目根，deb 安装形态为
+    ``~/.local/state/dragon-codex-boot``（``/usr/lib`` 对普通用户不可写）。
 
     必须在使用任何 ``log()`` 之前调用：``log()`` 在未初始化时静默丢弃，
     排查启动问题时只会看到空日志。
     """
 
-    setup_log(config.base_dir)
+    from . import paths
+
+    setup_log(paths.log_dir().parent)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

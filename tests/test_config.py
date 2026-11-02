@@ -118,8 +118,33 @@ def test_from_dict_rejects_wrong_types(overrides):
 
 
 def test_resolve_video_relative_to_config_dir(tmp_path):
+    # 配置目录旁存在视频时优先使用它（源码形态的标准布局）。
+    video = tmp_path / "media" / "startup.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"fake")
     parsed = cfg.from_dict(base_payload(), base_dir=tmp_path)
-    assert parsed.resolve_video() == (tmp_path / "media/startup.mp4").resolve()
+    assert parsed.resolve_video() == video.resolve()
+
+
+def test_resolve_video_falls_back_to_media_root(tmp_path, monkeypatch):
+    # deb 安装形态：配置在 ~/.config，视频在 /usr/share，配置目录旁没有视频。
+    share = tmp_path / "share"
+    video = share / "media" / "startup.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"fake")
+    monkeypatch.setattr(cfg.paths, "media_root", lambda: share)
+
+    conf_dir = tmp_path / "config_home"
+    conf_dir.mkdir()
+    parsed = cfg.from_dict(base_payload(), base_dir=conf_dir)
+    assert parsed.resolve_video() == video.resolve()
+
+
+def test_resolve_video_returns_config_dir_when_nowhere_found(tmp_path, monkeypatch):
+    # 两处都不存在时返回配置目录下的候选，便于报错信息显示预期路径。
+    monkeypatch.setattr(cfg.paths, "media_root", lambda: tmp_path / "share")
+    parsed = cfg.from_dict(base_payload(), base_dir=tmp_path)
+    assert parsed.resolve_video() == (tmp_path / "media" / "startup.mp4").resolve()
 
 
 def test_resolve_video_absolute_path_is_kept(tmp_path):
@@ -133,17 +158,18 @@ def test_resolve_app_command_finds_binary_on_path():
 
 
 def test_load_copies_example_when_missing(tmp_path, monkeypatch):
-    # 模拟「默认位置无配置」：把项目根指向临时目录并放入示例配置。
+    # 模拟「默认位置无配置」：把默认配置路径与示例模板都指向临时目录。
     example = tmp_path / "config" / "launcher.linux.example.json"
     example.parent.mkdir(parents=True)
     example.write_text(
         json.dumps(base_payload(), ensure_ascii=False), encoding="utf-8"
     )
-    monkeypatch.setattr(cfg, "PROJECT_ROOT", tmp_path)
+    target = tmp_path / "launcher.json"
+    monkeypatch.setattr(cfg.paths, "default_config_path", lambda: target)
     monkeypatch.setattr(cfg, "EXAMPLE_CONFIG_PATH", example)
 
     loaded = cfg.load()
-    assert loaded.config_path == (tmp_path / "launcher.json").resolve()
+    assert loaded.config_path == target.resolve()
     assert loaded.config_path.exists()
 
 

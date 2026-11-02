@@ -40,7 +40,12 @@ class LauncherLog:
 
 
 def setup(base_dir: Path) -> LauncherLog:
-    """初始化全局日志实例。"""
+    """初始化全局日志实例。
+
+    ``base_dir`` 为日志根目录，日志写到其下的 ``logs/launcher.log``。
+    调用方按运行形态传入合适位置（源码形态为项目根，安装形态为
+    XDG 状态目录），见 ``paths.py``。
+    """
     global _LOGGER
     _LOGGER = LauncherLog(base_dir)
     return _LOGGER

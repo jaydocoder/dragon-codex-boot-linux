@@ -172,11 +172,9 @@ class BootSession:
         return Rect(left, top, width, height)
 
     def _open_video(self, window_id: int) -> bool:
-        from pathlib import Path
-
-        path = Path(self.config.video)
-        if not path.is_absolute():
-            path = self.config.base_dir / path
+        # 交给 resolve_video() 做路径回退：源码形态在配置目录旁，
+        # deb 安装形态下视频在 /usr/share，而配置在 ~/.config。
+        path = self.config.resolve_video()
         try:
             self._player = self._player_factory(window_id, path, volume=self.config.volume)
             self._player.open()

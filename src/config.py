@@ -15,16 +15,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import paths
 from .geometry import ScreenFrame, validate_frames
 
 # 合法的嵌入渲染模式。auto 表示按能力探测顺序降级。
 EMBED_MODES = ("auto", "composite", "shm", "fade")
 
-# 项目根目录：src/ 的上一级。
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 项目根目录：src/ 的上一级。源码形态下就是仓库根；deb 安装后为
+# /usr/lib/dragon-codex-boot。具体路径策略见 paths.py。
+PROJECT_ROOT = paths.PROJECT_ROOT
 
 DEFAULT_CONFIG_NAME = "launcher.json"
-EXAMPLE_CONFIG_PATH = PROJECT_ROOT / "config" / "launcher.linux.example.json"
+EXAMPLE_CONFIG_PATH = paths.example_config_path()
 
 
 class ConfigError(Exception):
@@ -86,11 +88,28 @@ class Config:
     # 路径解析
     # ------------------------------------------------------------------
     def resolve_video(self) -> Path:
-        """把 ``video`` 解析为绝对路径，相对路径以配置所在目录为基准。"""
+        """把 ``video`` 解析为绝对路径。
+
+        相对路径按以下顺序查找，取第一个存在的：
+
+        1. 配置所在目录（源码形态的标准布局，也支持用户放自己的视频）；
+        2. 内置媒体目录（deb 安装形态下视频在 ``/usr/share``，
+           而配置文件在 ``~/.config``，两者不在同一目录）。
+
+        都不存在时返回第一个候选，让调用方在报错信息里显示预期路径。
+        """
         candidate = Path(self.video).expanduser()
         if candidate.is_absolute():
             return candidate
-        return (self.base_dir / candidate).resolve()
+
+        first = (self.base_dir / candidate).resolve()
+        if first.exists():
+            return first
+
+        fallback = (paths.media_root() / candidate).resolve()
+        if fallback.exists() and fallback != first:
+            return fallback
+        return first
 
     def resolve_app_command(self) -> str:
         """解析客户端启动命令为绝对路径；接受命令名（走 PATH 查找）。"""
@@ -103,17 +122,23 @@ class Config:
     def resolve_launcher_command(self) -> str:
         """本工具自己的启动命令，用于写入 .desktop 的 Exec。
 
-        未显式配置时按「当前项目根目录 + run.sh」推断，因为这是
-        ``scripts/install.sh`` 生成的标准入口。
+        未显式配置时按运行形态推断：
+
+        - 源码形态：项目根目录的 ``run.sh``（``scripts/install.sh`` 生成的标准入口）；
+        - 安装形态：``/usr/bin/dragon-codex-boot``（deb 包安装的命令）。
         """
 
         command = self.launcher_command.strip()
         if not command:
+            if paths.is_installed_layout():
+                installed = Path("/usr/bin") / paths.APP_ID
+                if installed.exists():
+                    return str(installed)
             return str(self.base_dir / "run.sh")
         candidate = Path(command).expanduser()
         if candidate.is_absolute():
             return str(candidate)
-        # 相对路径以项目根为基准，避免受调用时的工作目录影响。
+        # 相对路径以配置目录为基准，避免受调用时的工作目录影响。
         return str((self.base_dir / candidate).resolve())
 
 
@@ -311,12 +336,16 @@ def validate(config: Config) -> List[str]:
 
 
 def load(path: Optional[Path] = None) -> Config:
-    """加载配置文件；未指定时使用项目根目录的 ``launcher.json``。
+    """加载配置文件；未指定时按运行形态选择默认位置。
+
+    源码形态用项目根目录的 ``launcher.json``；deb 安装形态用
+    ``~/.config/dragon-codex-boot/launcher.json``，具体见 ``paths.py``。
 
     若配置文件不存在且目标是默认位置，则从示例模板复制一份，
     行为与上游「首次运行复制配置模板」一致。
     """
-    config_path = Path(path).expanduser() if path else (PROJECT_ROOT / DEFAULT_CONFIG_NAME)
+    config_path = Path(path).expanduser() if path else paths.default_config_path()
+    config_path = config_path.resolve()
     config_path = config_path.resolve()
 
     if not config_path.exists():
