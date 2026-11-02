@@ -26,6 +26,16 @@ EMBED_MODES = ("auto", "composite", "shm", "fade")
 PROJECT_ROOT = paths.PROJECT_ROOT
 
 DEFAULT_CONFIG_NAME = "launcher.json"
+
+# 示例模板路径。用函数而非模块级常量：模板位置取决于运行形态与安装前缀，
+# 必须在实际使用时求值，否则解包到非标准前缀运行会取到错误位置。
+def example_config_path() -> Path:
+    """当前运行形态下的示例配置模板路径。"""
+
+    return paths.example_config_path()
+
+
+# 兼容既有调用方（测试与文档按常量名引用）。
 EXAMPLE_CONFIG_PATH = paths.example_config_path()
 
 
@@ -346,12 +356,14 @@ def load(path: Optional[Path] = None) -> Config:
     """
     config_path = Path(path).expanduser() if path else paths.default_config_path()
     config_path = config_path.resolve()
-    config_path = config_path.resolve()
 
     if not config_path.exists():
-        if path is None and EXAMPLE_CONFIG_PATH.exists():
+        # 只有"未显式指定路径"才允许按模板生成；显式指定却不存在时报错，
+        # 避免用户以为读的是自己的配置、实际读了模板副本。
+        template = example_config_path() if path is None else None
+        if template is not None and template.exists():
             config_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(EXAMPLE_CONFIG_PATH, config_path)
+            shutil.copy2(template, config_path)
         else:
             raise ConfigError(f"配置文件不存在：{config_path}")
 

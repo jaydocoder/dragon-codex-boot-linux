@@ -327,6 +327,52 @@ def frames_to_json(frames: Sequence[ScreenFrame]) -> List[dict]:
         for frame in frames
     ]
 
+#: mpv 的 MPV_ERROR_PROPERTY_UNAVAILABLE。seek 之后到第一帧可截取之间存在
+#: 空窗，screenshot-raw 会以这个错误码返回。
+MPV_ERROR_PROPERTY_UNAVAILABLE = -12
+
+#: 抓帧失败时的重试预算（秒）。正常情况几十毫秒内就能成功。
+SCREENSHOT_RETRY_SECONDS = 2.0
+
+
+def _screenshot_with_retry(player, moment: float) -> object:
+    """抓取当前帧，遇到"还没有可用帧"时重试。
+
+    mpv 在 seek 到目标时间后，解码与渲染是异步的；screenshot-raw 在帧就绪
+    前调用会抛 ``SystemError(..., -12, ...)``。其它错误码（例如文件损坏）
+    直接向上抛，不做掩盖。
+    """
+
+    # 与 sample_frames 一致：延迟导入，避免缺 libmpv 时连模块导入都失败。
+    from .video import VideoError, enforce_numeric_locale
+
+    deadline = time.monotonic() + SCREENSHOT_RETRY_SECONDS
+    delay = 0.01
+    while True:
+        enforce_numeric_locale()
+        try:
+            return player.command("screenshot-raw", "video")
+        except SystemError as exc:
+            args = exc.args or ()
+            code = None
+            if len(args) >= 2 and isinstance(args[1], int):
+                code = args[1]
+            else:
+                for item in args:
+                    if isinstance(item, int):
+                        code = item
+                        break
+            if code != MPV_ERROR_PROPERTY_UNAVAILABLE:
+                raise
+            if time.monotonic() >= deadline:
+                raise VideoError(
+                    f"时间点 {moment:.2f}s 抓帧超时："
+                    f"等待 {SCREENSHOT_RETRY_SECONDS:.1f} 秒仍无可用视频帧"
+                ) from exc
+            time.sleep(delay)
+            delay = min(delay * 2, 0.1)
+
+
 def sample_frames(
     video_path,
     times: Sequence[float],
@@ -402,7 +448,12 @@ def sample_frames(
                 enforce_numeric_locale()
                 # 直接用底层命令：python-mpv 的 screenshot_raw 包装依赖
                 # Pillow，本项目刻意不引入，因此自己处理返回值。
-                shot = player.command("screenshot-raw", "video")
+                #
+                # screenshot-raw 在 seek 后可能立刻返回 -12
+                # （MPV_ERROR_PROPERTY_UNAVAILABLE）：该时刻还没有可截取的
+                # 视频帧。固定 sleep 无法彻底消除这个竞态（实测约 1/3 概率
+                # 命中），必须按错误码重试。
+                shot = _screenshot_with_retry(player, moment)
                 if not isinstance(shot, dict) or shot.get("format") != "bgr0":
                     raise VideoError(
                         f"时间点 {moment:.2f}s 抓帧失败：mpv 返回格式异常"

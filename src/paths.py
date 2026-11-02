@@ -62,11 +62,33 @@ def is_installed_layout() -> bool:
     return not (PROJECT_ROOT / "config" / "launcher.linux.example.json").exists()
 
 
+#: 安装形态下配置模板的标准位置（deb 包写入此处）。
+SYSTEM_DATA_ROOT = Path("/usr/share") / APP_ID
+
+
+def _installed_example_candidate() -> Path:
+    """安装形态下模板的实际路径。
+
+    正常情况下就是 ``/usr/share/dragon-codex-boot/launcher.example.json``。
+    但若要支持"解包到自定义前缀再运行"（打包后自检、AppImage 式分发），
+    代码根与数据根会同时平移到同一个前缀下，因此优先查找代码根的上一级：
+
+        <prefix>/usr/lib/dragon-codex-boot  ->  <prefix>/usr/share/dragon-codex-boot
+
+    两者不存在时才回退到系统标准路径。
+    """
+
+    sibling = PROJECT_ROOT.parent.parent / "share" / APP_ID / "launcher.example.json"
+    if sibling.exists():
+        return sibling
+    return SYSTEM_DATA_ROOT / "launcher.example.json"
+
+
 def example_config_path() -> Path:
     """示例配置模板路径，按运行形态选择位置。"""
 
     if is_installed_layout():
-        return Path("/usr/share") / APP_ID / "launcher.example.json"
+        return _installed_example_candidate()
     return PROJECT_ROOT / "config" / "launcher.linux.example.json"
 
 
@@ -98,5 +120,5 @@ def media_root() -> Path:
     """内置媒体根目录（安装形态为 ``/usr/share/dragon-codex-boot``）。"""
 
     if is_installed_layout():
-        return Path("/usr/share") / APP_ID
+        return _installed_example_candidate().parent
     return PROJECT_ROOT
