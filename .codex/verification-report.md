@@ -170,3 +170,48 @@ cd /home/neo/project/java/githubProject/dragon-codex-boot-linux
 ./run.sh run                   # 实机端到端
 tail -20 logs/launcher.log     # 期望以 cli:done handed_off=True 结束
 ```
+
+## 11. 开源发布
+
+### 11.1 发布信息
+
+| 项 | 值 |
+| --- | --- |
+| 仓库 | https://github.com/jaydocoder/dragon-codex-boot-linux |
+| 可见性 | Public |
+| 默认分支 | `main` |
+| 许可 | MIT（GitHub 已正确识别 `license.key = mit`） |
+| 文件数 | 43 |
+| 话题 | codex, chatgpt, linux, x11, pyqt6, libmpv, ubuntu, splash-screen, startup-animation, mit-license |
+
+### 11.2 版权与署名合规校验
+
+| 校验项 | 结果 |
+| --- | --- |
+| `LICENSE` 与上游逐字节一致 | 通过（blob 哈希均为 `8eb435753c6195a3bad81244522b72f56843aca5`） |
+| `NOTICE.md` 列明上游作者与仓库 | 通过 |
+| `NOTICE.md` 区分上游原创与本移植版新增 | 通过 |
+| 媒体素材署名与许可边界 | 通过（`startup.mp4` MD5 与上游一致，`MEDIA_NOTICE.md` 原样保留） |
+| 商标免责声明 | 通过（README / NOTICE / THIRD_PARTY 三处） |
+| 文档内部链接 | 通过（无悬空链接） |
+| 敏感信息扫描 | 通过（无 API key / token / 密码） |
+| 构建产物未入库 | 通过（`.venv/`、`logs/*.log`、`launcher.json`、`__pycache__/` 均被忽略） |
+| 可执行位保留 | 通过（`run.sh`、`scripts/*.sh` 均为 100755） |
+
+### 11.3 发布前修正的问题
+
+| 问题 | 处理 |
+| --- | --- |
+| `LICENSE` 版权行未体现上游作者 | 保留上游原文行，署名细节移入 `NOTICE.md` |
+| `THIRD_PARTY_NOTICES.md` 残留 Windows / .NET / DWM 描述 | 改为 Linux 实际依赖（PyQt6 / libmpv / python-xlib / X11） |
+| README 克隆地址为 `<this-repo>` 占位符 | 改为真实仓库地址 |
+| README 缺少原作者署名 | 顶部加署名块，末尾加"致谢"章节 |
+| `LICENSE` 追加版权行导致 GitHub 识别为 Other | 恢复标准 MIT 模板，署名移入 `NOTICE.md`，识别恢复为 MIT |
+| 缺少 `.gitattributes` | 新增，声明换行符与二进制类型 |
+| 缺少 `NOTICE.md` | 新增，完整说明来源与署名 |
+
+### 11.4 发布后状态
+
+- 全量测试：240 passed
+- 本地 `HEAD` 与 `origin/main` 一致（`72b84da`）
+- 工作区干净，无未提交改动
