@@ -37,13 +37,24 @@ Categories=Utility;
 StartupWMClass=Chatgpt
 """
 
-# 已被第三方脚本包装的用户级入口：Exec 指向用户目录下的脚本。
-WRAPPED = """[Desktop Entry]
+WRAPPED_TEMPLATE = """[Desktop Entry]
 Name=ChatGPT
-Exec=/home/neo/.local/bin/chatgpt-codexhost-launcher %U
+Exec={wrapper} %U
 Type=Application
 StartupWMClass=Chatgpt
 """
+
+
+def wrapped_entry(wrapper: Path) -> str:
+    """构造「已被第三方脚本包装」的入口内容。
+
+    包装脚本路径由调用方给出，必须落在临时目录里并真实存在：
+    ``looks_wrapped()`` 按 ``Path.home()`` 下的用户目录判定，
+    ``program_exists()`` 又要求该文件真的存在。写死 ``/home/neo/...``
+    会让 CI（HOME=/home/runner）判成「未包装 + 程序不存在」。
+    """
+
+    return WRAPPED_TEMPLATE.format(wrapper=wrapper)
 
 # 与本工具无关的入口。
 UNRELATED = """[Desktop Entry]
@@ -75,6 +86,25 @@ class TempDirs(unittest.TestCase):
         overrides.setdefault("base_dir", self.root)
         overrides.setdefault("app_command", "chatgpt")
         return Config(**overrides)
+
+    def write_wrapper(self, *, home_local: bool = False) -> Path:
+        """落一个真实存在的包装脚本，供 WRAPPED 入口引用。
+
+        ``home_local=True`` 时写到 ``Path.home()/.local/bin``，用于验证
+        「Exec 指向用户目录下的脚本即视为已包装」这一判据；否则写在临时
+        目录里，测试结束随临时目录一起清理。
+        """
+
+        if home_local:
+            wrapper = Path.home() / ".local" / "bin" / "chatgpt-codexhost-launcher"
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+            self.addCleanup(wrapper.unlink, missing_ok=True)
+        else:
+            wrapper = self.root / "bin" / "chatgpt-codexhost-launcher"
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+        wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        wrapper.chmod(0o755)
+        return wrapper
 
 
 class TestParse(TempDirs):
@@ -144,7 +174,8 @@ class TestFlags(TempDirs):
         self.assertFalse(plain.is_managed)
 
     def test_looks_wrapped_for_user_local_binary(self) -> None:
-        entry = parse_desktop_entry(self.write_entry("w.desktop", WRAPPED))
+        wrapper = self.write_wrapper(home_local=True)
+        entry = parse_desktop_entry(self.write_entry("w.desktop", wrapped_entry(wrapper)))
         self.assertTrue(looks_wrapped(entry))
 
     def test_looks_wrapped_false_for_official(self) -> None:
@@ -166,7 +197,9 @@ class TestBuildPlan(TempDirs):
         self.assertEqual(plans, [])
 
     def test_wrapped_entry_skipped_by_default(self) -> None:
-        self.write_entry("chatgpt.desktop", WRAPPED)
+        # 「已包装」判据依赖 Exec 落在用户目录下，这里必须用 ~/.local/bin。
+        wrapper = self.write_wrapper(home_local=True)
+        self.write_entry("chatgpt.desktop", wrapped_entry(wrapper))
         plans = build_plan(self.make_config(), directories=[self.apps])
 
         self.assertEqual(len(plans), 1)
@@ -174,13 +207,13 @@ class TestBuildPlan(TempDirs):
         self.assertIn("包装", plans[0].reason)
 
     def test_wrapped_entry_adopted_when_enabled(self) -> None:
-        self.write_entry("chatgpt.desktop", WRAPPED)
+        self.write_entry("chatgpt.desktop", wrapped_entry(self.write_wrapper()))
         config = self.make_config(include_wrapped_entrypoints=True)
         plans = build_plan(config, directories=[self.apps])
         self.assertEqual(plans[0].action, EntryPlan.ADOPT)
 
     def test_exclude_list_wins(self) -> None:
-        self.write_entry("chatgpt.desktop", WRAPPED)
+        self.write_entry("chatgpt.desktop", wrapped_entry(self.write_wrapper()))
         config = self.make_config(
             include_wrapped_entrypoints=True,
             exclude_entrypoints=["chatgpt.desktop"],
@@ -194,7 +227,7 @@ class TestBuildPlan(TempDirs):
 
         system = self.root / "system-apps"
         system.mkdir()
-        self.write_entry("chatgpt.desktop", WRAPPED)
+        self.write_entry("chatgpt.desktop", wrapped_entry(self.write_wrapper()))
         self.write_entry("chatgpt.desktop", OFFICIAL, directory=system)
 
         config = self.make_config(include_wrapped_entrypoints=True)
@@ -371,7 +404,7 @@ class TestAdoptAndRestore(TempDirs):
 
 class TestVerify(TempDirs):
     def test_clean_state_has_no_problems(self) -> None:
-        self.write_entry("chatgpt.desktop", WRAPPED)
+        self.write_entry("chatgpt.desktop", wrapped_entry(self.write_wrapper()))
         config = self.make_config()
         self.assertEqual(verify(config, directories=[self.apps]), [])
 
