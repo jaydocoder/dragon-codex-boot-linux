@@ -470,7 +470,14 @@ def _build_exec(config: Config, entry: DesktopEntry) -> str:
     original = entry.exec_line
     if not original:
         raise ValueError("原入口没有 Exec，拒绝接管")
-    return f"{_quote_command_path(launcher)} --launch-command {_quote_argument(original)}"
+    # 必须带上 run 子命令：入口程序是 argparse 风格的多命令 CLI
+    # （run / entries / calibrate），光给 ``--launch-command`` 会被当成
+    # 非法子命令而直接报错退出，点图标毫无反应。源码形态的 run.sh 与
+    # 安装形态的 /usr/bin/dragon-codex-boot 都是这个约定。
+    return (
+        f"{_quote_command_path(launcher)} run "
+        f"--launch-command {_quote_argument(original)}"
+    )
 
 
 def adopt(config: Config, plan: EntryPlan) -> Path:

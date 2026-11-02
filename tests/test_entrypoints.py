@@ -510,3 +510,90 @@ class TestAdoptRestoreRoundTrip(TempDirs):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExecRunsTheRunSubcommand(unittest.TestCase):
+    """接管后的 Exec 必须能被本工具的 CLI 真正接受。
+
+    背景：入口程序是 argparse 多命令 CLI（run / entries / calibrate）。
+    早期实现把 Exec 拼成 ``<launcher> --launch-command "..."``，漏了
+    ``run`` 子命令，导致点图标时 argparse 直接把原命令当成非法子命令：
+
+        error: argument command: invalid choice: '...' (choose from 'run', ...)
+
+    症状是「点图标毫无反应」。这一组用例专门防这个回归。
+    """
+
+    def _config(self, tmp_path):
+        from src.config import from_dict
+
+        return from_dict(
+            {
+                "DisplayName": "t",
+                "Video": "media/startup.mp4",
+                "AppCommand": "/usr/bin/chatgpt",
+                "LauncherCommand": str(tmp_path / "run.sh"),
+            },
+            base_dir=tmp_path,
+        )
+
+    def _entry(self, exec_line):
+        from src.entrypoints import DesktopEntry
+
+        raw = f"[Desktop Entry]\nName=X\nExec={exec_line}\n"
+        return DesktopEntry(
+            path=Path("/tmp/doc/t.desktop"),
+            raw=raw,
+            fields={"Name": "X", "Exec": exec_line},
+        )
+
+    def test_exec_contains_run_subcommand(self):
+        from src.entrypoints import _build_exec
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._config(Path(td))
+            entry = self._entry("/usr/bin/chatgpt %U")
+            line = _build_exec(cfg, entry)
+
+        self.assertIn(" run ", f" {line} ")
+
+    def test_exec_subcommand_precedes_launch_command(self):
+        """run 必须在 --launch-command 之前，否则 argparse 仍会报错。"""
+
+        from src.entrypoints import _build_exec
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._config(Path(td))
+            entry = self._entry("/usr/bin/chatgpt %U")
+            line = _build_exec(cfg, entry)
+
+        self.assertLess(line.index(" run "), line.index("--launch-command"))
+
+    def test_generated_exec_is_parsable_by_the_cli(self):
+        """用真正的解析器验证，而不只是字符串匹配。
+
+        这是本组用例的核心：只要 Exec 拼错，argparse 就会抛 SystemExit，
+        这里立刻失败——不必真的去点图标。
+        """
+
+        from src.entrypoints import _build_exec
+        from src.__main__ import build_parser
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._config(Path(td))
+            entry = self._entry("/usr/bin/chatgpt %U")
+            line = _build_exec(cfg, entry)
+
+        # 拆出「子命令 + 参数」部分：去掉启动器路径本身。
+        launcher = cfg.resolve_launcher_command()
+        self.assertTrue(line.startswith(launcher), line)
+        args_text = line[len(launcher):].strip()
+
+        import shlex
+
+        argv = shlex.split(args_text)
+        parser = build_parser()
+        # 解析失败会抛 SystemExit，等价于点图标时的报错。
+        ns = parser.parse_args(argv)
+        self.assertEqual(ns.command, "run")
+        self.assertEqual(ns.launch_command, "/usr/bin/chatgpt %U")
