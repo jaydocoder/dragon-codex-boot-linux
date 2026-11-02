@@ -44,6 +44,12 @@ PyQt6 + XComposite + libmpv 重新实现同一套交互，**不复制上游代�
 sudo apt-get install -y ./dragon-codex-boot_0.1.0_all.deb
 ```
 
+每次发布都附带 `SHA256SUMS`，下载后可核对：
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
 装完后**应用菜单里直接出现「ChatGPT（启动动画）」，双击即可**播放动画并拉起 ChatGPT。
 
 依赖由 apt 自动解决（`python3-pyqt6`、`python3-xlib`、`python3-mpv`、`libmpv2`、`x11-utils`），
@@ -179,6 +185,37 @@ cd dragon-codex-boot-linux
 ```
 
 测试在 `QT_QPA_PLATFORM=offscreen` 下运行，不需要真实 X 服务器。
+
+## 发布流程
+
+`.github/workflows/build-deb.yml` 自动完成构建与发布，无需本地打包：
+
+| 触发 | 行为 |
+| --- | --- |
+| 推送 `v*` 标签 | 跑测试 → 构建 deb → 在容器内实测安装 → 创建 GitHub Release 并附上 deb 与 `SHA256SUMS` |
+| 手动触发（Actions 页面） | 只跑测试与构建，产物作为 artifact 保留 30 天，不发布 |
+
+构建前的三道关：
+
+1. **单元测试**：258 项全部通过才继续
+2. **包结构断言**：逐项检查 `copyright`、`NOTICE.md`、desktop 文件、素材、代码是否都在包里，并校验包内版本号与 tag 一致
+3. **容器实测安装**：在干净的 `ubuntu:24.04` 里 `apt-get install` 一遍，验证依赖可解析、`--version` 能跑、desktop 文件合法、卸载干净
+
+发一个版本：
+
+```bash
+# 同步 VERSION 与 tag，避免 tag 与包内版本不一致
+echo "0.2.0-linux" > VERSION
+git commit -am "release: 0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+本地想提前验证容器安装，跑同一份脚本：
+
+```bash
+./scripts/verify-deb-in-container.sh
+```
 
 ## 与上游的差异
 

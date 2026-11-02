@@ -1,0 +1,198 @@
+name: 构建与发布 deb
+
+# 触发方式：
+#   1. 推送 v* 标签     -> 跑测试、构建 deb、创建 GitHub Release 并附上 deb
+#   2. 手动触发         -> 只跑测试与构建，产物留在 Actions 的 artifact 里，不发布
+#
+# 刻意不在每次 push 到 main 时构建：本项目没有编译步骤，日常提交的
+# 价值在于测试反馈，deb 产物只在真要发版时才有意义。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "手动构建时使用的版本号（留空则读 VERSION 文件）"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deb-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ----------------------------------------------------------------------
+  # 第一关：测试。任何失败都不进入发布，避免发出跑不起来的包。
+  # ----------------------------------------------------------------------
+  test:
+    name: 单元测试
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          # setuptools_scm 之类的工具不在这里用，浅克隆足够。
+          fetch-depth: 1
+
+      - name: 安装 Python 与系统库
+        run: |
+          sudo apt-get update
+          # libmpv2 供 python-mpv 在导入期做版本探测；
+          # libegl1 / libgl1 是 PyQt6 的硬依赖。
+          sudo apt-get install -y --no-install-recommends \
+            libmpv2 libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+
+      - name: 安装 Python 依赖
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: 运行测试
+        # test.sh 内部会把 QT_QPA_PLATFORM 设为 offscreen，因此无需 X 服务。
+        run: ./scripts/test.sh -q
+
+  # ----------------------------------------------------------------------
+  # 第二关：构建 deb，并在干净的容器里验证它真能装上。
+  # ----------------------------------------------------------------------
+  build:
+    name: 构建 deb
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 解析版本号
+        id: version
+        # 优先用 tag（去掉 v 前缀），其次用手动输入的版本号，最后回落到 VERSION 文件。
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            ver="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            ver="${{ inputs.version }}"
+            ver="${ver#v}"
+          else
+            ver="$(tr -d '[:space:]' < VERSION | sed 's/-linux$//')"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析出的版本号：$ver"
+
+      - name: 安装打包工具
+        run: |
+          sudo apt-get update
+          # dpkg-deb 属于 dpkg，runner 自带；fakeroot 用于统一属主。
+          sudo apt-get install -y --no-install-recommends fakeroot dpkg
+
+      - name: 构建 deb
+        env:
+          DCB_VERSION: ${{ steps.version.outputs.version }}
+        run: ./packaging/build-deb.sh
+
+      - name: 校验包结构
+        # 逐项断言包内关键文件存在，防止构建脚本改动后静默漏装。
+        run: |
+          set -euo pipefail
+          DEB="dist/dragon-codex-boot_${{ steps.version.outputs.version }}_all.deb"
+          [[ -f "$DEB" ]] || { echo "::error::未生成 $DEB"; exit 1; }
+
+          echo "== 控制信息 =="
+          dpkg-deb -I "$DEB"
+
+          # copyright 必须存在：Debian 政策要求，也是上游 MIT 署名的落点。
+          for f in \
+            ./usr/bin/dragon-codex-boot \
+            ./usr/lib/dragon-codex-boot/src/__main__.py \
+            ./usr/share/dragon-codex-boot/media/startup.mp4 \
+            ./usr/share/dragon-codex-boot/launcher.example.json \
+            ./usr/share/applications/dragon-codex-boot.desktop \
+            ./usr/share/doc/dragon-codex-boot/copyright \
+            ./usr/share/doc/dragon-codex-boot/NOTICE.md
+          do
+            dpkg-deb -c "$DEB" | grep -q " $f$" \
+              || { echo "::error::包内缺少 $f"; exit 1; }
+          done
+
+          # 包内版本号必须与 tag 一致。
+          pkgver="$(dpkg-deb -f "$DEB" Version)"
+          [[ "$pkgver" == "${{ steps.version.outputs.version }}" ]] \
+            || { echo "::error::版本不一致：包内 $pkgver"; exit 1; }
+
+      - name: 在容器里实测安装
+        # 用干净的 Ubuntu 24.04 容器装一遍。逻辑放在
+        # scripts/verify-deb-in-container.sh，本地可跑同一份脚本，
+        # 避免 CI 与本地验证两边漂移。
+        run: ./scripts/verify-deb-in-container.sh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dragon-codex-boot-${{ steps.version.outputs.version }}
+          path: dist/*.deb
+          if-no-files-found: error
+          # deb 约 22 MB，保留 30 天足够排障。
+          retention-days: 30
+
+      - name: 生成校验和
+        run: ./scripts/checksums.sh
+
+      - name: 上传校验和
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums-${{ steps.version.outputs.version }}
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------------
+  # 第三关：发布。只在推 tag 时执行，且必须在构建验证通过之后。
+  # ----------------------------------------------------------------------
+  release:
+    name: 发布 Release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      # 创建 Release 与上传资产需要写权限。
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 列出待发布文件
+        run: ls -lh dist/
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # 用 tag 命名的说明分两种：正式的 vX.Y.Z 与预发布（带 -rc/-beta 等）。
+          prerelease=""
+          if [[ "$tag" =~ -(rc|alpha|beta|test) ]]; then
+            prerelease="--prerelease"
+          fi
+
+          gh release create "$tag" \
+            dist/*.deb \
+            dist/SHA256SUMS \
+            --title "Dragon Codex Boot Linux $tag" \
+            --generate-notes \
+            $prerelease \
+            --verify-tag

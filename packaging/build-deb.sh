@@ -21,15 +21,26 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+say() { printf '%s\n' "$*"; }
+die() { printf '错误：%s\n' "$*" >&2; exit 1; }
+
 PKG_NAME="dragon-codex-boot"
-VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION" | sed 's/-linux$//')"
+# 版本号来源：默认读 VERSION 文件；CI 发布时用 DCB_VERSION 覆盖，
+# 让包里版本与 git tag 严格一致（否则 tag v0.2.0 会打出 0.1.0 的包）。
+VERSION="${DCB_VERSION:-$(tr -d '[:space:]' < "$ROOT/VERSION" | sed 's/-linux$//')}"
+# git tag 通常带 v 前缀，deb 版本号不允许，这里剥掉。
+VERSION="${VERSION#v}"
+[[ -n "$VERSION" ]] || die "版本号为空"
+# Deb 版本号只允许 [A-Za-z0-9.+~-]，带其它字符会让 dpkg 拒绝，提前挡住。
+if [[ ! "$VERSION" =~ ^[0-9] ]]; then
+    die "版本号必须以数字开头：$VERSION"
+fi
 ARCH="all"
 INSTALL_ROOT="$ROOT/packaging/usr-bin-dragon-codex-boot"
 APPDIR="$ROOT/packaging/build/${PKG_NAME}_${VERSION}_${ARCH}"
 OUTDIR="$ROOT/dist"
 
-say() { printf '%s\n' "$*"; }
-die() { printf '错误：%s\n' "$*" >&2; exit 1; }
 
 # ----------------------------------------------------------------------
 # 前置检查

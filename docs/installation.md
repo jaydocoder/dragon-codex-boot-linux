@@ -69,7 +69,47 @@ PyQt6 私有的 Qt 库副本（含 libavcodec 等）。这会带来三个问题�
 ```bash
 ./packaging/build-deb.sh              # 产物在 dist/
 ./packaging/build-deb.sh --install    # 构建后直接安装
+
+# 指定版本号（默认读 VERSION 文件）
+DCB_VERSION=0.2.0 ./packaging/build-deb.sh
+
+# 生成校验和
+./scripts/checksums.sh
 ```
+
+### 在容器里预先验证
+
+发版前想确认包在干净系统上真能装上，跑：
+
+```bash
+./scripts/verify-deb-in-container.sh
+```
+
+它会在 `ubuntu:24.04` 容器里依次执行：启用 universe → 安装 deb →
+校验文件布局 → 确认 `python3-xlib`/`python3-mpv`/`PyQt6` 可导入 →
+跑 `dragon-codex-boot --version` → 校验 desktop 文件 → 卸载并确认干净。
+CI 里跑的是同一份脚本，避免本地与线上验证不一致。
+
+### GitHub Actions 自动发布
+
+`.github/workflows/build-deb.yml` 定义了完整流水线：
+
+| 触发 | 行为 |
+| --- | --- |
+| 推送 `v*` 标签 | 测试 → 构建 → 结构断言 → 容器实测安装 → 创建 Release（附 deb 与 `SHA256SUMS`） |
+| 手动触发 | 测试 → 构建 → 结构断言 → 容器实测 → 存为 artifact（30 天），不发布 |
+
+发布一个版本：
+
+```bash
+echo "0.2.0-linux" > VERSION
+git commit -am "release: 0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+tag 去掉 `v` 前缀后作为包版本，CI 会断言包内版本与 tag 一致，
+不一致直接失败，避免发出错版本的包。
 
 ## 前置条件（源码方式）
 
