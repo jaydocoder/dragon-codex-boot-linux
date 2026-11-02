@@ -4,4 +4,4 @@
 本包为 Ubuntu / X11 环境下的等价实现。
 """
 
-__version__ = "0.2.0-linux"
+__version__ = "0.2.1-linux"

@@ -40,7 +40,8 @@ Dragon Codex Boot Linux 已安装。
   dragon-codex-boot entries --adopt     # 确认后接管
   dragon-codex-boot entries --restore   # 一键还原
 
-注意：仅支持 X11 会话（Wayland 下窗口嵌入不可用）。
+会话支持：X11 与 Wayland 均可。
+Wayland 下自动降级到 shm 嵌入档（画面与交接正常，仅过渡效果不同）。
 EOF
         ;;
     abort-upgrade|abort-remove|abort-deconfigure)
