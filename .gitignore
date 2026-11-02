@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# 运行时产物
+logs/*.log
+launcher.json
+
+# 编辑器与系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 桌面入口接管的备份文件（属于用户机器状态，不应入库）
+*.dcb-linux.bak

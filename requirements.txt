@@ -1,0 +1,21 @@
+# Dragon Codex Boot Linux —— Python 依赖
+#
+# 全部依赖都装进项目内 .venv：Ubuntu 24.04 的系统 Python 受 PEP 668 保护，
+# 不允许直接 pip install；而 PyQt6 必须用 pip 版本才能和 libmpv 协同工作。
+#
+# 安装：scripts/install.sh
+# 手动：python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# GUI 与窗口嵌入。系统源的 python3-pyqt6 缺少 QtMultimedia，
+# 因此视频交给 libmpv 播放，Qt 只负责窗口与合成。
+PyQt6==6.12.0
+
+# libmpv 的 Python 绑定。视频直接渲染进 Qt 窗口的 X11 表面（vo=gpu, wid=…）。
+python-mpv==1.0.8
+
+# 纯 Python 的 X11 协议实现，用于找窗口、量几何、对齐客户区。
+# 不依赖 python3-xlib 之外的 C 扩展，安装后即用。
+python-xlib==0.33
+
+# 测试框架。
+pytest==9.2.0

@@ -1,0 +1,56 @@
+{
+  "DisplayName": "Dragon Codex Boot",
+  "Video": "media/startup.mp4",
+  "AppCommand": "/usr/bin/chatgpt",
+  "ProcessNames": [
+    "chatgpt",
+    "ChatGPT"
+  ],
+  "ProcessPathContains": "/chatgpt/",
+  "TargetWMClass": "Chatgpt",
+  "HoldAt": 11.3,
+  "TransitionStart": 12.7,
+  "TransitionEnd": 13.65,
+  "MaxWaitSeconds": 60,
+  "Volume": 1,
+  "PlayerWidth": 1920,
+  "PlayerHeight": 1080,
+  "MatchClientToPlayer": true,
+  "EmbedMode": "auto",
+  "EmbedFps": 30,
+  "AutoReplaceEntrypoints": false,
+  "IncludeWrappedEntrypoints": false,
+  "ExcludeEntrypoints": [
+    "chatgpt.desktop"
+  ],
+  "ScreenFrames": [
+    {
+      "Time": 12.65,
+      "X": 0.123,
+      "Y": 0.094,
+      "Width": 0.736,
+      "Height": 0.725
+    },
+    {
+      "Time": 13,
+      "X": 0.074,
+      "Y": 0.061,
+      "Width": 0.845,
+      "Height": 0.825
+    },
+    {
+      "Time": 13.5,
+      "X": 0,
+      "Y": 0,
+      "Width": 1,
+      "Height": 1
+    },
+    {
+      "Time": 13.65,
+      "X": 0,
+      "Y": 0,
+      "Width": 1,
+      "Height": 1
+    }
+  ]
+}
